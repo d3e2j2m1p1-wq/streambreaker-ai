@@ -1,0 +1,15 @@
+# Virtual environment
+venv/
+*.pyc
+__pycache__/
+
+# Environment variables
+.env
+
+# Streamlit secrets (KEEPS YOUR API KEY SECRET!)
+.streamlit/
+secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db
