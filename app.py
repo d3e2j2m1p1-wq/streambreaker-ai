@@ -18,7 +18,8 @@ for k,v in [("result",None),("af",None),("auto_detected",False),
             ("profile_saved",False),("instagram_val",1200),("spotify_val",350),
             ("youtube_val",800),("career_val","emerging"),("budget_val",1500),
             ("openai_key",""),("claude_key",""),("groq_key",""),
-            ("chat_history",[]),("chat_llm","claude")]:
+            ("chat_history",[]),("chat_llm","claude"),
+            ("_run_af",None),("_run_genre","indie-pop"),("_run_backend","openai"),("_run_lyrics","")]:
     if k not in st.session_state: st.session_state[k] = v
 
 dark = st.session_state.dark_mode
@@ -836,6 +837,14 @@ else:
 
     # ── ANALYZE PAGE ─────────────────────────────────────────
     col_l, col_c, col_r = st.columns([320, 680, 260], gap="small")
+
+    # Show stale-results banner if a result exists but audio features changed since last run
+    if (st.session_state.result is not None and
+        st.session_state.get("_run_af") is not None and
+        st.session_state.auto_detected and
+        st.session_state.af != st.session_state.get("_run_af")):
+        with col_c:
+            st.warning("⚠️ Audio features have changed since the last run. Click **⚡ Run Analysis** to update results.")
     with col_l:
         st.markdown("<div style='padding:28px 16px;'>", unsafe_allow_html=True)
         st.markdown('<div class="sb-title">StreamBreaker AI</div>', unsafe_allow_html=True)
@@ -966,38 +975,52 @@ else:
         st.markdown("</div>", unsafe_allow_html=True)
 
 
-    # RUN PIPELINE
-    # RUN
+    # RUN PIPELINE — only executes when button explicitly clicked
+    # All inputs are snapshotted into session state so slider changes
+    # after the run don't retrigger anything.
     if run_btn:
-        af_input={"danceability":danceability,"energy":energy,"key":key,"loudness":loudness,
-                  "mode":mode,"speechiness":speechiness,"acousticness":acousticness,
-                  "instrumentalness":instrumentalness,"liveness":liveness,"valence":valence,
-                  "tempo":float(tempo),"duration_ms":duration_sec*1000,"time_signature":time_sig,
-                  "explicit":explicit,"genre":genre}
-        artist_profile={"instagram_followers":instagram,"spotify_listeners":spotify_listeners,
-                        "youtube_subscribers":youtube_subs,"genre":genre.replace("-"," ").title()}
-        st.session_state["budget_val"] = budget
-        pipeline=load_pipeline(backend=selected_backend,api_key=api_key_input or None)
+        # Snapshot all current input values
+        af_input = {
+            "danceability": danceability, "energy": energy, "key": key,
+            "loudness": loudness, "mode": mode, "speechiness": speechiness,
+            "acousticness": acousticness, "instrumentalness": instrumentalness,
+            "liveness": liveness, "valence": valence, "tempo": float(tempo),
+            "duration_ms": duration_sec * 1000, "time_signature": time_sig,
+            "explicit": explicit, "genre": genre,
+        }
+        artist_profile = {
+            "instagram_followers": instagram, "spotify_listeners": spotify_listeners,
+            "youtube_subscribers": youtube_subs, "genre": genre.replace("-"," ").title(),
+        }
+        # Save inputs to session state so results always match what was run
+        st.session_state["budget_val"]      = budget
+        st.session_state["_run_af"]         = af_input
+        st.session_state["_run_genre"]      = genre
+        st.session_state["_run_backend"]    = selected_backend
+        st.session_state["_run_lyrics"]     = lyrics
+
+        pipeline = load_pipeline(backend=selected_backend, api_key=api_key_input or None)
         with col_c:
-            prog=st.progress(0,text="Initializing…")
-            prog.progress(15,text="📊 Model 1 · XGBoost…")
+            prog = st.progress(0, text="Initializing…")
+            prog.progress(15, text="📊 Model 1 · XGBoost…")
         try:
-            prog.progress(45,text="🎤 Model 2 · NLP…")
-            prog.progress(72,text="🚀 Model 3 · Strategy…")
-            result=pipeline.run(audio_features=af_input,lyrics=lyrics,budget=budget,
-                                artist_profile=artist_profile,career_stage=career_stage)
-            prog.progress(100,text="✅ Done")
+            prog.progress(45, text="🎤 Model 2 · NLP…")
+            prog.progress(72, text="🚀 Model 3 · Strategy…")
+            result = pipeline.run(
+                audio_features=af_input, lyrics=lyrics, budget=budget,
+                artist_profile=artist_profile, career_stage=career_stage
+            )
+            prog.progress(100, text="✅ Done")
             prog.empty()
-            st.session_state.result=result
-            st.session_state.af=af_input
+            st.session_state.result = result
+            st.session_state.af     = af_input
         except Exception as e:
             prog.empty()
-            with col_c: st.error(f"Pipeline error: {e}")
+            with col_c:
+                st.error(f"Pipeline error: {e}")
 
-    # CENTER PANEL
-
-    # CENTER + RIGHT
-    # CENTER PANEL
+    # CENTER PANEL — reads from session_state, never from live widgets
+    # This means slider changes don't affect displayed results until Re-run is clicked
     with col_c:
         st.markdown("<div style='padding-top:28px;'>", unsafe_allow_html=True)
         if st.session_state.result is None:
