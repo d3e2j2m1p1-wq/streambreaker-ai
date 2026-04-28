@@ -19,7 +19,9 @@ st.set_page_config(
 
 # ── SESSION STATE ─────────────────────────────────────────────
 for k, v in [("result", None), ("chat_history", []),
-             ("openai_key", ""), ("claude_key", "")]:
+             ("openai_key", ""), ("claude_key", ""),
+             ("cached_audio_name", None), ("cached_audio_vals", {}),
+             ("cached_audio_lyrics", ""), ("cached_audio_lyrics_source", "")]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -163,10 +165,10 @@ st.markdown('<p class="subtitle">AI-Powered Music Marketing Strategy Platform �
 
 with st.expander("👥 Team Members", expanded=False):
     cols = st.columns(4)
-    with cols[0]: st.markdown("**Model 0** — Miguel  \n*Audio Feature Extraction*")
-    with cols[1]: st.markdown("**Model 1** — Harsh  \n*XGBoost Prediction*")
-    with cols[2]: st.markdown("**Model 2** — Stephanie  \n*NLP Lyric Analysis*")
-    with cols[3]: st.markdown("**Model 3** — Gopi Krishna  \n*LLM Marketing Strategy*")
+    with cols[0]: st.markdown("**Model 1** — Harsh  \n*XGBoost Prediction*")
+    with cols[1]: st.markdown("**Model 2** — Stephanie  \n*NLP Lyric Analysis*")
+    with cols[2]: st.markdown("**Model 3** — Miguel  \n*LLM Marketing Strategy*")
+    with cols[3]: st.markdown("**Model 4** — Gopi Krishna  \n*Orchestration & Web App*")
 
 st.divider()
 
@@ -222,25 +224,36 @@ if audio_file:
         format=f"audio/{audio_file.name.rsplit('.',1)[-1].lower()}")
     audio_file.seek(0)
 
-    with st.sidebar:
-        with st.spinner("Analyzing track…"):
-            meta = get_file_metadata(audio_file, filename=audio_file.name)
-            extracted, err = extract_audio_features(audio_file, filename=audio_file.name)
-            # Lyrics
-            embedded = meta.get("embedded_lyrics","")
-            if embedded and len(embedded.strip()) > 20:
-                auto_lyrics, lyrics_source = embedded.strip(), "embedded"
-            elif api_key_input and selected_backend == "openai":
-                auto_lyrics, lyrics_source = fetch_lyrics_gpt(
-                    meta["title"], meta["artist"], api_key_input)
-            else:
-                auto_lyrics, lyrics_source = "", "not_found"
+    # Only extract if this is a new file — cache result in session state
+    if st.session_state.cached_audio_name != audio_file.name:
+        with st.sidebar:
+            with st.spinner("Analyzing track — one moment…"):
+                meta = get_file_metadata(audio_file, filename=audio_file.name)
+                extracted, err = extract_audio_features(audio_file, filename=audio_file.name)
+                embedded = meta.get("embedded_lyrics","")
+                if embedded and len(embedded.strip()) > 20:
+                    lyr_text, lyr_src = embedded.strip(), "embedded"
+                elif api_key_input and selected_backend == "openai":
+                    lyr_text, lyr_src = fetch_lyrics_gpt(
+                        meta["title"], meta["artist"], api_key_input)
+                else:
+                    lyr_text, lyr_src = "", "not_found"
+        if err:
+            st.sidebar.error(f"Audio error: {err}")
+        else:
+            # Save to session state — won't run again until a new file is uploaded
+            st.session_state.cached_audio_name          = audio_file.name
+            st.session_state.cached_audio_vals          = extracted
+            st.session_state.cached_audio_lyrics        = lyr_text
+            st.session_state.cached_audio_lyrics_source = lyr_src
 
-    if err:
-        st.sidebar.error(f"Audio error: {err}")
-    else:
+    # Always read from cache
+    if st.session_state.cached_audio_name == audio_file.name:
+        extracted = st.session_state.cached_audio_vals
         auto_vals = extracted
-        key_str = f"{extracted['_key_name']} {extracted['_mode_name']}"
+        auto_lyrics    = st.session_state.cached_audio_lyrics
+        lyrics_source  = st.session_state.cached_audio_lyrics_source
+        key_str  = f"{extracted['_key_name']} {extracted['_mode_name']}"
         lyr_note = {"embedded":"✓ Lyrics from file","gpt":"✓ Lyrics via GPT",
                     "not_found":"✏️ Paste lyrics below"}.get(lyrics_source,"")
         st.sidebar.markdown(f'''<div class="auto-banner">
